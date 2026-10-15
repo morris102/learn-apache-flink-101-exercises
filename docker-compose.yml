@@ -58,8 +58,6 @@ services:
     ports:
       - "8082:8081"
     command: jobmanager
-    volumes:
-      - ./flink-lib/flink-table-runtime-2.3.0.jar:/opt/flink/lib/flink-table-runtime-2.3.0.jar:ro
     environment:
       - |
         FLINK_PROPERTIES=
@@ -71,8 +69,6 @@ services:
       - jobmanager
     command: taskmanager
     scale: 1
-    volumes:
-      - ./flink-lib/flink-table-runtime-2.3.0.jar:/opt/flink/lib/flink-table-runtime-2.3.0.jar:ro
     environment:
       - |
         FLINK_PROPERTIES=
