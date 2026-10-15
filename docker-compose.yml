@@ -1,78 +1,97 @@
 services:
-  broker:
-    image: apache/kafka:4.0.0
-    platform: linux/amd64
-    container_name: broker
+  kafka:
+    image: apache/kafka:4.1.0
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://localhost:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092
+
+      KAFKA_LISTENERS: CONTROLLER://:9093,HOST://:9092,DOCKER://:29092
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,HOST:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_NUM_PARTITIONS: 3
 
-  kcat:
-    image: edenhill/kcat:1.7.1
-    platform: linux/amd64
-    container_name: kcat
-    entrypoint:
-      - /bin/sh
-      - -c
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+    networks:
+      - kafka_network
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka_network
+
+  jobmanager:
+    image: flink:latest
+    ports:
+      - "8082:8081"
+    command: jobmanager
+    volumes:
+      - ./flink-lib/flink-table-runtime-2.3.0.jar:/opt/flink/lib/flink-table-runtime-2.3.0.jar:ro
+    environment:
       - |
-        apk add jq;
-        while [ 1 -eq 1 ];do sleep 60;done
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
 
-  sql-client:
-    build: .
-    command: bin/sql-client.sh
+  taskmanager:
+    image: flink:latest
     depends_on:
       - jobmanager
+    command: taskmanager
+    scale: 1
+    volumes:
+      - ./flink-lib/flink-table-runtime-2.3.0.jar:/opt/flink/lib/flink-table-runtime-2.3.0.jar:ro
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 2
+
+  sql-client:
+    image: flink:latest
+    depends_on:
+      - jobmanager
+    command: bin/sql-client.sh
     environment:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: jobmanager
         rest.address: jobmanager
-
-  jobmanager:
-    build: .
-    ports:
-      - "127.0.0.1:8081:8081"
-    command: jobmanager
-    volumes:
-      - flink_data:/tmp/
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: jobmanager
-        state.backend: hashmap
-        state.checkpoints.dir: file:///tmp/flink-checkpoints
-        heartbeat.interval: 1000
-        heartbeat.timeout: 5000
-        rest.flamegraph.enabled: true
-        web.backpressure.refresh-interval: 10000
-
-  taskmanager:
-    build: .
-    depends_on:
-      - jobmanager
-    command: taskmanager
-    volumes:
-      - flink_data:/tmp/
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: jobmanager
-        taskmanager.numberOfTaskSlots: 3
-        state.backend: hashmap
-        state.checkpoints.dir: file:///tmp/flink-checkpoints
-        heartbeat.interval: 1000
-        heartbeat.timeout: 5000
-
 volumes:
-  flink_data:
+  kafka_data:
+
+networks:
+  kafka_network:
+    driver: bridge

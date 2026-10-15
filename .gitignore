@@ -1,0 +1,6 @@
+./agents
+./codex
+./github
+./.vscode
+../target
+demo/target/*
