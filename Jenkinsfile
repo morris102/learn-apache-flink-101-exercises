@@ -2,8 +2,9 @@
 @Library('ci-library@main') _
 
 dockerPipeline(
-    imageName: 'stevenguyen9x/flink-exercises',
+    credentialsId: 'docker-creds',
     dockerfile: 'Dockerfile',
+    imageName: 'stevenguyen9x/flink-exercises',
     tag: '1.0.1',
-    credentialsId: 'docker-creds'
+    gitRepoUrl: 'https://github.com/morris102/learn-apache-flink-101-exercises'
 )
